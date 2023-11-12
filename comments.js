@@ -1,60 +1,83 @@
 //create web server
 var express = require('express');
-var app = express();
-var path = require('path');
-var fs = require('fs');
+var router = express.Router();
 var bodyParser = require('body-parser');
-
-//create server
-var server = app.listen(3000, function () {
-    console.log('Server is running..');
-});
-
-//set view engine
-app.set('view engine', 'ejs');
-app.set('views', path.join(__dirname, 'views'));
-
-//set static path
-app.use(express.static(path.join(__dirname, 'public')));
-app.use(bodyParser.urlencoded({ extended: false }));
-
-//connect to mongodbd
+var Comment = require('../models/comment');
+var Post = require('../models/post');
 var mongoose = require('mongoose');
-mongoose.Promise = global.Promise;
-mongoose.connect('mongodb://localhost:27017/comments', { useNewUrlParser: true });
 
-//create schema
-var commentSchema = new mongoose.Schema({
-    name: String,
-    comment: String,
-    created_at: { type: Date, default: Date.now }
-});
-
-//create model
-var Comment = mongoose.model('Comment', commentSchema);
-
-//create routes
-app.get('/', (req, res) => {
-    res.render('index');
-});
-
-app.get('/comments', (req, res) => {
-    Comment.find({}, (err, data) => {
-        if (err) throw err;
-        res.render('comments', { comments: data });
+//get comments
+router.get('/comments', function(req, res, next){
+    Comment.find(function(err, comments){
+        if(err){return next(err);}
+        res.json(comments);
     });
 });
 
-app.post('/comments', (req, res) => {
-    var newComment = Comment(req.body).save((err, data) => {
-        if (err) throw err;
-        res.json(data);
+//post comments
+router.post('/comments', function(req, res, next){
+    var comment = new Comment(req.body);
+    comment.save(function(err, comment){
+        if(err){return next(err);}
+        res.json(comment);
     });
 });
 
-app.delete('/comments/:id', (req, res) => {
-    Comment.find({ _id: req.params.id }).deleteOne((err, data) => {
-        if (err) throw err;
-        res.json(data);
+//pre-load comment objects
+router.param('comment', function(req, res, next, id){
+    var query = Comment.findById(id);
+    query.exec(function(err, comment){
+        if(err){return next(err);}
+        if(!comment){return next(new Error('can\'t find comment'));}
+        req.comment = comment;
+        return next();
     });
 });
+
+//get comment by id
+router.get('/comments/:comment', function(req, res){
+    res.json(req.comment);
+});
+
+//upvote comment
+router.put('/comments/:comment/upvote', function(req, res, next){
+    req.comment.upvote(function(err, comment){
+        if(err){return next(err);}
+        res.json(comment);
+    });
+});
+
+//post comment on post
+router.post('/posts/:post/comments', function(req, res, next){
+    var comment = new Comment(req.body);
+    comment.post = req.post;
+    comment.save(function(err, comment){
+        if(err){return next(err);}
+        req.post.comments.push(comment);
+        req.post.save(function(err, post){
+            if(err){return next(err);}
+            res.json(comment);
+        });
+    });
+});
+
+//pre-load post objects
+router.param('post', function(req, res, next, id){
+    var query = Post.findById(id);
+    query.exec(function(err, post){
+        if(err){return next(err);}
+        if(!post){return next(new Error('can\'t find post'));}
+        req.post = post;
+        return next();
+    });
+});
+
+//get post by id
+router.get('/posts/:post', function(req, res){
+    res.json(req.post);
+});
+
+//upvote post
+router.put('/posts/:post/upvote', function(req, res, next){
+    req.post.upvote(function(err, post){
+        if
